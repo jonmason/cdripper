@@ -1,16 +1,14 @@
-import os
-import sys
-import threading
-import time
-
-import CDDB, DiscID
+#!/usr/bin/env python
+import os, sys, threading, time, CDDB, DiscID
+import getopt
 
 #TODO:
 # Python bindings for lame
 # Python bindings for cdparanoia
 # Fetch CD Cover art
 # See if there is another, similarly named dest dir already existing
-
+# change errors to exceptions
+# use a class for disk_data, thus reducing the need to reinterpret the data
 
 def disk_data(disc_info, num):
 	s = disc_info['DTITLE']
@@ -39,6 +37,7 @@ def lame_thread(disc_info, num, cleanup):
 			  %(lame_opts, track_name, track_name, track_title, artist, album, year, num, genre))
 	if error:
 		print "Error %d encounterd while encoding" %error
+		return
 
 	if cleanup:
 		os.system('rm "%s.wav"' %track_name)
@@ -166,18 +165,23 @@ def fetch_cd_info(device):
 	return 0, read_info, i+1
 
 
-def parse_cmdline(args):
-
+def main():
 	cdrom = "/dev/cdrom"
 	dest_dir = os.environ['HOME']
 	cleanup = True
 
-	for i in range(len(args)):
-		if args[i] == "--device":
-			cdrom = args[i+1] 
-		if args[i] == "--dest_dir":
-			dest_dir = args[i+1]
-		if args[i] == "--nocleanup":
+	try:
+		opts, args = getopt.getopt(sys.argv[1:], "", ["device=", "dest_dir=", "nocleanup"])
+	except getopt.error, err:
+		print str(err)
+		sys.exit(2)
+
+	for o, a in opts:
+		if o == "--device":
+			cdrom = a
+		if o == "--dest_dir":
+			dest_dir = a
+		if o == "--nocleanup":
 			cleanup = False	
 
 	(rc, disc_info, track_count) = fetch_cd_info(cdrom)
@@ -198,5 +202,6 @@ def parse_cmdline(args):
 
 	os.system('eject "%s"' %cdrom)
 
+
 if __name__ == "__main__":
-	parse_cmdline(sys.argv[1:])
+	main()
