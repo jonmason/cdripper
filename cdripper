@@ -147,7 +147,7 @@ def fetch_cd_info(device):
 			temp_info = query_info[i]
 			print "%d - Title = %s, Category %s, disc_id %s" %(i, temp_info['title'], temp_info['category'], temp_info['disc_id'])
 		print "Please select the correct disc number"
-		choice = input() 
+		choice = input()
 		print "Selection %d Chosen" %choice
 		query_info = query_info[choice]
 
@@ -159,8 +159,8 @@ def fetch_cd_info(device):
 	print read_info['DTITLE']
 	print read_info['DYEAR']
 	print read_info['DGENRE']
-        for i in range(disc_id[1]):
-	    print "Track %.02d: %s" %(i, read_info['TTITLE' + `i`])
+	for i in range(disc_id[1]):
+		print "Track %.02d: %s" %(i, read_info['TTITLE' + `i`])
 
 	return 0, read_info, i+1
 
