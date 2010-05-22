@@ -138,9 +138,19 @@ def fetch_cd_info(device):
 	disc_id = DiscID.disc_id(cdrom)
 
 	(query_status, query_info) = CDDB.query(disc_id)
-	if query_status != 200:
+	if query_status != 200 and query_status != 210 and query_status != 211:
 		print "Error encountered querying CDDB, error = %d" %query_status
 		return -1, None, 0
+
+	if query_status == 210 or query_status == 211:
+		print "Multiple Disc's found"
+		for i in range(len(query_info)):
+			temp_info = query_info[i]
+			print "%d - Title = %s, Category %s, disc_id %s" %(i, temp_info['title'], temp_info['category'], temp_info['disc_id'])
+		print "Please select the correct disc number"
+		choice = input() 
+		print "Selection %d Chosen" %choice
+		query_info = query_info[choice]
 
 	(read_status, read_info) = CDDB.read(query_info['category'], query_info['disc_id'])
 	if read_status != 210:
