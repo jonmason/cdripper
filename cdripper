@@ -1,6 +1,5 @@
 #!/usr/bin/env python
-import os, sys, threading, time, CDDB, DiscID
-import getopt
+import getopt, os, sys, threading, time, CDDB, DiscID
 
 #TODO:
 # Python bindings for lame
@@ -8,167 +7,162 @@ import getopt
 # Fetch CD Cover art
 # See if there is another, similarly named dest dir already existing
 # change errors to exceptions
-# use a class for disk_data, thus reducing the need to reinterpret the data
 
-def disk_data(disc_info, num):
-	s = disc_info['DTITLE']
-	artist = s.split(' / ')[0]
-	album = s.split(' / ')[1]
-
-	year = disc_info['DYEAR']
-	genre = disc_info['DGENRE']
-
-	track_title = disc_info['TTITLE' + `num-1`]
-	track_name = "%s - %.02d %s" %(artist, num, track_title)
-	track_name = track_name.replace(' ', '_')
-
-	return artist, album, track_title, track_name, year, genre
-	
-
-#This function adds a dep for lame
-def lame_thread(disc_info, num, cleanup):
-	print "encoding track %d" %num
-
-	(artist, album, track_title, track_name, year, genre) = disk_data(disc_info, num)
-
-	lame_opts = "-S --preset extreme -q 0 -V 0"
-
-	error = os.system('lame %s "%s.wav" "%s.mp3" --tt "%s" --ta "%s" --tl "%s" --ty "%s" --tn "%s" --tg "%s"'
-			  %(lame_opts, track_name, track_name, track_title, artist, album, year, num, genre))
-	if error:
-		print "Error %d encounterd while encoding" %error
-		return
-
-	if cleanup:
-		os.system('rm "%s.wav"' %track_name)
-	print "done encoding track %d" %num
+class album:
+	def __init__(self):
+		self.artist = None
+		self.artist_dir = None
+		self.album = None
+		self.album_dir = None
+		self.track_title = []
+		self.track_name = []
+		self.year = None
+		self.genre = None
+		self.device = "/dev/cdrom"
+		self.dest_dir = os.environ['HOME']
+		self.cleanup = True
 
 
-#This function adds a dep for cdparanoia
-def rip(device, disc_info, track):
+	#This function adds a dep for CDDB-py
+	def fetch_cddb(self):
+		print "fetching"
 
-	(artist, album, track_title, track_name, year, genre) = disk_data(disc_info, track)
+		disc_id = DiscID.disc_id(DiscID.open(self.device, 0))
 
-	error = os.system('cdparanoia -wd %s %d "%s.wav"' %(device, track, track_name))
-	if error:
-		return -1
+		(query_status, query_info) = CDDB.query(disc_id)
+		if query_status != 200 and query_status != 210 and query_status != 211:
+			print "Error encountered querying CDDB, error = %d" %query_status
+			return True 
 
-	return 0
+		if query_status == 210 or query_status == 211:
+			print "Multiple Disc's found"
+			for i in range(len(query_info)):
+				temp_info = query_info[i]
+				print "%d - Title = %s, Category %s, disc_id %s" %(i, temp_info['title'], temp_info['category'], temp_info['disc_id'])
+			print "Please select the correct disc number"
+			choice = input()
+			print "Selection %d Chosen" %choice
+			query_info = query_info[choice]
+
+		(read_status, read_info) = CDDB.read(query_info['category'], query_info['disc_id'])
+		if read_status != 210:
+			print "Error encountered reading CDDB, error = %d" %read_status
+			return True
+
+		s = read_info['DTITLE']
+		self.artist = s.split(' / ')[0]
+		self.album = s.split(' / ')[1]
+
+		self.artist_dir = self.artist.replace(' ', '_')
+		self.album_dir = self.album.replace(' ', '_')
+
+		self.year = read_info['DYEAR']
+		self.genre = read_info['DGENRE']
+
+		print self.artist
+		print self.album
+		print self.year
+		print self.genre
+		for i in range(disc_id[1]):
+			self.track_title.append(read_info['TTITLE' + `i`])
+			track_name = "%s - %.02d %s" %(self.artist, i+1, self.track_title[i])
+			track_name = track_name.replace(' ', '_')
+			self.track_name.append(track_name)
+			print "%.02d - %s" %(i, self.track_title[i])
+
+		return False
 
 
-def rip_encode(device, disc_info, track_count, cleanup):
-	print "ripping & encoding"
+	#This function adds a dep for lame
+	def _lame_thread(self, num):
+		print "encoding track %d" %(num+1)
 
-	for i in range(track_count):
-		error = rip(device, disc_info, i+1)
+		lame_opts = "-S --preset extreme -q 0 -V 0"
+
+		error = os.system('lame %s "%s.wav" "%s.mp3" --tt "%s" --ta "%s" --tl "%s" --ty "%s" --tn "%s" --tg "%s"'
+				  %(lame_opts, self.track_name[num], self.track_name[num], self.track_title[num], self.artist, self.album, self.year, num+1, self.genre))
+		if error:
+			print "Error %d encounterd while encoding" %error
+			return
+
+		if self.cleanup:
+			os.system('rm "%s.wav"' %self.track_name[num])
+		print "done encoding track %d" %(num+1)
+
+
+	#This function adds a dep for cdparanoia
+	def _rip(self, num):
+		error = os.system('cdparanoia -wd %s %d "%s.wav"' %(self.device, num, self.track_name[num]))
 		if error:
 			return -1
 
-		lt = threading.Thread(target=lame_thread, args=(disc_info, i+1, cleanup))
-		lt.start()
-
-	return 0
+		return 0
 
 
-def create_dest_dir(dest_dir, disc_info):
-	print "creating dir"
+	def rip_encode(self):
+		print "ripping & encoding"
 
-	(artist, album, track_title, track_name, year, genre) = disk_data(disc_info, 1)
-	artist = artist.replace(' ', '_')
-	album = album.replace(' ', '_')
+		for i in range(len(self.track_name)):
+			error = self._rip(i)
+			if error:
+				return -1
 
-	error = os.chdir(dest_dir)
-	if error:
-		return -1
+			lt = threading.Thread(target=self._lame_thread, args=(i))
+			lt.start()
 
-	error = os.access(artist, os.F_OK)
-	if error == False:
-		error = os.mkdir(artist)
+		return 0
+
+
+	def create_dest_dir(self):
+		print "creating dir"
+
+		error = os.chdir(self.dest_dir)
 		if error:
 			return -1
 
-	error = os.chdir(artist)
-	if error:
-		return -1
+		error = os.access(self.artist_dir, os.F_OK)
+		if error == False:
+			error = os.mkdir(self.artist_dir)
+			if error:
+				return -1
 
-	error = os.access(album, os.F_OK)
-	if error == False:
-		error = os.mkdir(album)
+		error = os.chdir(self.artist_dir)
 		if error:
 			return -1
 
-	error = os.chdir(album)
-	if error:
-		return -1
+		error = os.access(self.album_dir, os.F_OK)
+		if error == False:
+			error = os.mkdir(self.album_dir)
+			if error:
+				return -1
 
-	return 0
+		error = os.chdir(self.album_dir)
+		if error:
+			return -1
 
-
-def create_playlist(dest_dir, disc_info, track_count):
-	print "creating playlist"
-
-	error = os.chdir(dest_dir)
-	if error:
-		return -1
-
-	(artist, album, track_title, track_name, year, genre) = disk_data(disc_info, 1)
-	artist = artist.replace(' ', '_')
-	album = album.replace(' ', '_')
-
-	m3u = open('%s_-_%s.m3u' %(artist, album), "w")
-
-	for i in range(track_count):
-		(artist, album, track_title, track_name, year, genre) = disk_data(disc_info, i+1)
-		artist = artist.replace(' ', '_')
-		album = album.replace(' ', '_')
-		s = "%s/%s/%s\n" %(artist, album, track_name)
-		m3u.writelines(s)
-
-	m3u.close()
-
-	return 0
+		return 0
 
 
-#This function adds a dep for CDDB-py
-def fetch_cd_info(device):
-	print "fetching"
+	def create_playlist(self):
+		print "creating playlist"
 
-	cdrom = DiscID.open(device, 0)
-	disc_id = DiscID.disc_id(cdrom)
+		error = os.chdir(self.dest_dir)
+		if error:
+			return -1
 
-	(query_status, query_info) = CDDB.query(disc_id)
-	if query_status != 200 and query_status != 210 and query_status != 211:
-		print "Error encountered querying CDDB, error = %d" %query_status
-		return -1, None, 0
+		m3u = open('%s_-_%s.m3u' %(self.artist_dir, self.album_dir), "w")
 
-	if query_status == 210 or query_status == 211:
-		print "Multiple Disc's found"
-		for i in range(len(query_info)):
-			temp_info = query_info[i]
-			print "%d - Title = %s, Category %s, disc_id %s" %(i, temp_info['title'], temp_info['category'], temp_info['disc_id'])
-		print "Please select the correct disc number"
-		choice = input()
-		print "Selection %d Chosen" %choice
-		query_info = query_info[choice]
+		for i in range(len(self.track_name)):
+			s = "%s/%s/%s\n" %(self.artist_dir, self.album_dir, self.track_name[i])
+			m3u.writelines(s)
 
-	(read_status, read_info) = CDDB.read(query_info['category'], query_info['disc_id'])
-	if read_status != 210:
-		print "Error encountered reading CDDB, error = %d" %read_status
-		return -1, None, 0
+		m3u.close()
 
-	print read_info['DTITLE']
-	print read_info['DYEAR']
-	print read_info['DGENRE']
-	for i in range(disc_id[1]):
-		print "Track %.02d: %s" %(i, read_info['TTITLE' + `i`])
-
-	return 0, read_info, i+1
+		return 0
 
 
 def main():
-	cdrom = "/dev/cdrom"
-	dest_dir = os.environ['HOME']
-	cleanup = True
+	disc = album()
 
 	try:
 		opts, args = getopt.getopt(sys.argv[1:], "", ["device=", "dest_dir=", "nocleanup"])
@@ -178,29 +172,29 @@ def main():
 
 	for o, a in opts:
 		if o == "--device":
-			cdrom = a
+			disc.device = a
 		if o == "--dest_dir":
-			dest_dir = a
+			disc.dest_dir = a
 		if o == "--nocleanup":
-			cleanup = False	
+			disc.cleanup = False	
 
-	(rc, disc_info, track_count) = fetch_cd_info(cdrom)
+	rc = disc.fetch_cddb()
 	if rc:
 		return
 
-	rc = create_playlist(dest_dir, disc_info, track_count)
+	rc = disc.create_playlist()
 	if rc:
 		return
 
-	rc = create_dest_dir(dest_dir, disc_info)
+	rc = disc.create_dest_dir()
 	if rc:
 		return
 
-	rc = rip_encode(cdrom, disc_info, track_count, cleanup)
+	rc = disc.rip_encode()
 	if rc:
 		return
 
-	os.system('eject "%s"' %cdrom)
+	os.system('eject "%s"' %disc.device)
 
 
 if __name__ == "__main__":
