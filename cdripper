@@ -46,7 +46,7 @@ class album:
 
 	#This function adds a dep for CDDB-py
 	def fetch_cddb(self):
-		print "fetching"
+		print "Fetching CDDB Informtaion\n"
 
 		disc_id = DiscID.disc_id(DiscID.open(self.device, 0))
 
@@ -86,23 +86,24 @@ class album:
 		self.year = read_info['DYEAR']
 		self.genre = read_info['DGENRE']
 
-		print self.artist
-		print self.album
-		print self.year
-		print self.genre
+		print "Artist\t- %s" %self.artist
+		print "Album\t- %s" %self.album
+		print "Year\t- %s" %self.year
+		print "Genre\t- %s" %self.genre
 		for i in range(disc_id[1]):
 			self.track_title.append(read_info['TTITLE' + `i`])
 			track_name = "%s - %.02d %s" %(self.artist, i+1, self.track_title[i])
 			track_name = track_name.replace(' ', '_')
 			self.track_name.append(track_name)
-			print "%.02d - %s" %(i, self.track_title[i])
+			print "\t%.02d - %s" %(i+1, self.track_title[i])
+		print "\n"
 
 		return False
 
 
 	#This function adds a dep for lame
 	def _lame_thread(self, num):
-		print "encoding track %d" %(num+1)
+		print "Encoding Track %d - \"%s\" as mp3" %(num+1, self.track_title[num])
 
 		lame_opts = "-S --preset extreme -q 0 -V 0"
 
@@ -114,12 +115,12 @@ class album:
 
 		if self.cleanup:
 			os.system('rm "%s.wav"' %self.track_name[num])
-		print "done encoding track %d" %(num+1)
+		print "Done Encoding Track %d - \"%s\"" %(num+1, self.track_title[num])
 
 
 	#This function adds a dep for cdparanoia
 	def _rip(self, num):
-		error = os.system('cdparanoia -wd %s %d "%s.wav"' %(self.device, num, self.track_name[num]))
+		error = os.system('cdparanoia -wd %s %d "%s.wav"' %(self.device, num+1, self.track_name[num]))
 		if error:
 			return -1
 
@@ -127,7 +128,7 @@ class album:
 
 
 	def rip_encode(self):
-		print "ripping & encoding"
+		print "Ripping CD & Encoding\n"
 
 		for i in range(len(self.track_name)):
 			error = self._rip(i)
@@ -141,7 +142,7 @@ class album:
 
 
 	def create_dest_dir(self):
-		print "creating dir"
+		print "Creating Directory\n"
 
 		error = os.chdir(self.dest_dir)
 		if error:
@@ -171,7 +172,7 @@ class album:
 
 
 	def create_playlist(self):
-		print "creating playlist"
+		print "Creating m3u Playlist\n"
 
 		error = os.chdir(self.dest_dir)
 		if error:
@@ -222,6 +223,7 @@ def main():
 		return
 
 	os.system('eject "%s"' %disc.device)
+	print "Finished Ripping CD, Enjoy!"
 
 
 if __name__ == "__main__":
