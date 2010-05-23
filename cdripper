@@ -5,7 +5,6 @@ import getopt, os, sys, threading, time, CDDB, DiscID
 # Python bindings for lame
 # Python bindings for cdparanoia
 # Fetch CD Cover art
-# See if there is another, similarly named dest dir already existing
 # change errors to exceptions
 
 class album:
@@ -21,6 +20,28 @@ class album:
 		self.device = "/dev/cdrom"
 		self.dest_dir = os.environ['HOME']
 		self.cleanup = True
+
+
+	def _artist_name_fixup(self, artist):
+		#for output uniformity, we should make sure that all titles that end with ", The" have "The " added to the beginning
+		if artist.endswith(', The'):
+			artist = artist.strip(', The')
+			artist = "%s%s" %('The ', artist)
+
+		if artist.endswith(', the'):
+			artist = artist.strip(', the')
+			artist = "%s%s" %('The ', artist)
+
+		#Look for a similarly named artist already existing and change to that if so
+		lower = artist.lower()
+		lower = lower.replace(' ', '_')
+		for files in os.listdir(self.dest_dir):
+			if lower == files.lower():
+				files = files.replace('_', ' ')
+				print "Similar Artist %s found" %files
+				artist = files
+
+		self.artist = artist
 
 
 	#This function adds a dep for CDDB-py
@@ -57,14 +78,7 @@ class album:
 		self.artist = s.split(' / ')[0]
 		self.album = s.split(' / ')[1]
 
-		#for output uniformity, we should make sure that all titles that end with ", The" have "The " added to the beginning
-		if self.artist.endswith(', The'):
-			self.artist = self.artist.strip(', The')
-			self.artist = "%s%s" %('The ', self.artist)
-
-		if self.artist.endswith(', the'):
-			self.artist = self.artist.strip(', the')
-			self.artist = "%s%s" %('The ', self.artist)
+		self._artist_name_fixup(self.artist)
 
 		self.artist_dir = self.artist.replace(' ', '_')
 		self.album_dir = self.album.replace(' ', '_')
