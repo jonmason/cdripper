@@ -20,6 +20,7 @@ class album:
 		self.device = "/dev/cdrom"
 		self.dest_dir = os.environ['HOME']
 		self.cleanup = True
+		self.force_va = False
 
 
 	def _artist_name_fixup(self, artist):
@@ -56,11 +57,10 @@ class album:
 
 
 	def _fillout_va_disc_info(self, read_info, num_tracks):
-		s = read_info['DTITLE']
-		self.artist = s.split(' / ')[0]
-		self.album = s.split(' / ')[1]
+		self.artist = "Various" 
+		self.album = read_info['DTITLE'].split(' / ')[1]
 
-		self.artist_dir = self.artist.replace(' ', '_')
+		self.artist_dir = self.artist 
 		self.album_dir = self.album.replace(' ', '_')
 
 		self.year = read_info['DYEAR']
@@ -70,8 +70,19 @@ class album:
 		print "Album\t- %s" %self.album
 		print "Year\t- %s" %self.year
 		print "Genre\t- %s" %self.genre
+
+		#determine if the seperator is '/' or '-'
+		if len(read_info['TTITLE0'].split(' / ')) > 1:
+			dash = False
+		else:
+			dash = True
+
 		for i in range(num_tracks):
 			self.track_title.append(read_info['TTITLE' + `i`])
+
+			if dash:
+				self.track_title[i] = self.track_title[i].replace(' - ', ' / ')
+
 			artist = self.track_title[i].split(' / ')[0]
 			artist = self._artist_name_fixup(artist)
 			song  = self.track_title[i].split(' / ')[1]
@@ -138,7 +149,7 @@ class album:
 			print "Error encountered reading CDDB, error = %d" %read_status
 			return True
 
-		if read_info['DTITLE'].split(' / ')[0] == "Various":
+		if self.force_va or read_info['DTITLE'].split(' / ')[0].startswith("Various"):
 			self._fillout_va_disc_info(read_info, disc_id[1])
 		else:
 			self._fillout_disc_info(read_info, disc_id[1])
@@ -150,7 +161,7 @@ class album:
 	def _lame_thread(self, num):
 		print "Encoding Track %d - \"%s\" as mp3" %(num+1, self.track_title[num])
 
-		if self.artist == "Various":
+		if self.artist.startswith("Various"):
 			artist = self.track_name[num].split('_-_')[0] 
 			artist_dir = artist
 			artist.replace('_', ' ')
@@ -178,7 +189,7 @@ class album:
 	#This function adds a dep for cdparanoia
 	def _rip(self, num):
 		print "Ripping Track %d to WAV" %(num+1)
-		if self.artist == "Various":
+		if self.artist.startswith("Various"):
 			artist_dir = self.track_name[num].split('_-_')[0] 
 		else:
 			artist_dir = self.artist_dir
@@ -210,7 +221,7 @@ class album:
 		if error:
 			return -1
 
-		if self.artist == "Various":
+		if self.artist.startswith("Various"):
 			for i in range(len(self.track_name)):
 				artist_dir = self.track_name[i].split('_-_')[0] 
 				dirs = "%s/%s" %(artist_dir, self.album_dir)
@@ -244,7 +255,7 @@ class album:
 		m3u = open('%s_-_%s.m3u' %(self.artist_dir, self.album_dir), "w")
 
 		for i in range(len(self.track_name)):
-			if self.artist == "Various":
+			if self.artist.startswith("Various"):
 				artist = self.track_name[i].split('_-_')[0]
 				s = "%s/%s/%s\n" %(artist, self.album_dir, self.track_name[i])
 			else:
@@ -260,7 +271,7 @@ def main():
 	disc = album()
 
 	try:
-		opts, args = getopt.getopt(sys.argv[1:], "", ["device=", "dest_dir=", "nocleanup"])
+		opts, args = getopt.getopt(sys.argv[1:], "", ["device=", "dest_dir=", "nocleanup", "force_va"])
 	except getopt.error, err:
 		print str(err)
 		sys.exit(2)
@@ -272,6 +283,8 @@ def main():
 			disc.dest_dir = a
 		if o == "--nocleanup":
 			disc.cleanup = False	
+		if o == "--force_va":
+			disc.force_va = True
 
 	rc = disc.fetch_cddb()
 	if rc:
