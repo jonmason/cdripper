@@ -6,6 +6,7 @@ import getopt, os, sys, threading, time, CDDB, DiscID
 # Python bindings for cdparanoia
 # Fetch CD Cover art
 # change errors to exceptions
+# determine if running cdparanoia in Batch mode is faster
 
 class album:
 	def __init__(self):
@@ -21,6 +22,7 @@ class album:
 		self.dest_dir = os.environ['HOME']
 		self.cleanup = True
 		self.force_va = False
+		self.title_only = False
 
 
 	def _artist_name_fixup(self, artist):
@@ -74,8 +76,11 @@ class album:
 		#determine if the seperator is '/' or '-'
 		if len(read_info['TTITLE0'].split(' / ')) > 1:
 			dash = False
-		else:
+		elif len(read_info['TTITLE0'].split(' - ')) > 1:
 			dash = True
+		else:
+			print "Invalid Various Artist Disc"
+			return True
 
 		for i in range(num_tracks):
 			self.track_title.append(read_info['TTITLE' + `i`])
@@ -92,11 +97,21 @@ class album:
 			print "\t%.02d - %s" %(i+1, self.track_title[i])
 		print "\n"
 
+		if self.title_only:
+			return True
+		else:
+			return False
+
 
 	def _fillout_disc_info(self, read_info, num_tracks):
 		s = read_info['DTITLE']
 		self.artist = s.split(' / ')[0]
 		self.album = s.split(' / ')[1]
+
+		if self.artist == self.album:
+			print "The CDDB entry is hosed, attempting to work-around"
+			self.artist = self.artist.split(' - ')[0]
+			self.album = self.album.split(' - ')[1]
 
 		self.artist = self._artist_name_fixup(self.artist)
 
@@ -117,6 +132,11 @@ class album:
 			self.track_name.append(track_name)
 			print "\t%.02d - %s" %(i+1, self.track_title[i])
 		print "\n"
+
+		if self.title_only:
+			return True
+		else:
+			return False
 
 
 	#This function adds a dep for CDDB-py
@@ -150,9 +170,11 @@ class album:
 			return True
 
 		if self.force_va or read_info['DTITLE'].split(' / ')[0].startswith("Various"):
-			self._fillout_va_disc_info(read_info, disc_id[1])
+			if self._fillout_va_disc_info(read_info, disc_id[1]):
+				return True
 		else:
-			self._fillout_disc_info(read_info, disc_id[1])
+			if self._fillout_disc_info(read_info, disc_id[1]):
+				return True
 
 		return False
 
@@ -195,9 +217,9 @@ class album:
 			artist_dir = self.artist_dir
 		error = os.system('cdparanoia -wd %s %d "%s/%s/%s.wav"' %(self.device, num+1, artist_dir, self.album_dir, self.track_name[num]))
 		if error:
-			return -1
+			return True
 
-		return 0
+		return False
 
 
 	def rip_encode(self):
@@ -206,12 +228,12 @@ class album:
 		for i in range(len(self.track_name)):
 			error = self._rip(i)
 			if error:
-				return -1
+				return True
 
 			lt = threading.Thread(target=self._lame_thread, args=(i,))
 			lt.start()
 
-		return 0
+		return False
 
 
 	def create_dest_dir(self):
@@ -219,7 +241,7 @@ class album:
 
 		error = os.chdir(self.dest_dir)
 		if error:
-			return -1
+			return True
 
 		if self.artist.startswith("Various"):
 			for i in range(len(self.track_name)):
@@ -232,7 +254,7 @@ class album:
 
 				error = os.makedirs(dirs)
 				if error:
-					return -1
+					return True
 		else:
 			dirs = "%s/%s" %(self.artist_dir, self.album_dir)
 
@@ -240,9 +262,9 @@ class album:
 			if error == False:
 				error = os.makedirs(dirs)
 				if error:
-					return -1
+					return True
 
-		return 0
+		return False
 
 
 	def create_playlist(self):
@@ -250,7 +272,7 @@ class album:
 
 		error = os.chdir(self.dest_dir)
 		if error:
-			return -1
+			return True
 
 		m3u = open('%s_-_%s.m3u' %(self.artist_dir, self.album_dir), "w")
 
@@ -264,14 +286,14 @@ class album:
 
 		m3u.close()
 
-		return 0
+		return False
 
 
 def main():
 	disc = album()
 
 	try:
-		opts, args = getopt.getopt(sys.argv[1:], "", ["device=", "dest_dir=", "nocleanup", "force_va"])
+		opts, args = getopt.getopt(sys.argv[1:], "", ["device=", "dest_dir=", "nocleanup", "force_va", "title_only"])
 	except getopt.error, err:
 		print str(err)
 		sys.exit(2)
@@ -285,6 +307,8 @@ def main():
 			disc.cleanup = False	
 		if o == "--force_va":
 			disc.force_va = True
+		if o == "--title_only":
+			disc.title_only = True
 
 	rc = disc.fetch_cddb()
 	if rc:
