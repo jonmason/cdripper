@@ -32,16 +32,80 @@ class album:
 			artist = artist.strip(', the')
 			artist = "%s%s" %('The ', artist)
 
+		if artist.startswith('the '):
+			artist = artist.replace('the ', 'The ', 1)
+
 		#Look for a similarly named artist already existing and change to that if so
 		lower = artist.lower()
 		lower = lower.replace(' ', '_')
+		lower_w_the = "%s%s" %('the_', lower)
+		lower_wo_the = lower.strip('the_')
 		for files in os.listdir(self.dest_dir):
-			if lower == files.lower():
+			if lower == files.lower() or lower_w_the == files.lower() or lower_wo_the == files.lower():
 				files = files.replace('_', ' ')
 				print "Similar Artist %s found" %files
 				artist = files
 
-		self.artist = artist
+		return artist
+
+
+	def _track_name_fixup(self, trackname):
+		trackname = trackname.replace(' ', '_')
+		trackname = trackname.replace('/', '')
+		return trackname
+
+
+	def _fillout_va_disc_info(self, read_info, num_tracks):
+		s = read_info['DTITLE']
+		self.artist = s.split(' / ')[0]
+		self.album = s.split(' / ')[1]
+
+		self.artist_dir = self.artist.replace(' ', '_')
+		self.album_dir = self.album.replace(' ', '_')
+
+		self.year = read_info['DYEAR']
+		self.genre = read_info['DGENRE']
+
+		print "Artist\t- %s" %self.artist
+		print "Album\t- %s" %self.album
+		print "Year\t- %s" %self.year
+		print "Genre\t- %s" %self.genre
+		for i in range(num_tracks):
+			self.track_title.append(read_info['TTITLE' + `i`])
+			artist = self.track_title[i].split(' / ')[0]
+			artist = self._artist_name_fixup(artist)
+			song  = self.track_title[i].split(' / ')[1]
+			track_name = "%s - %.02d %s" %(artist, i+1, song)
+			track_name = track_name.replace(' ', '_')
+			self.track_name.append(track_name)
+			print "\t%.02d - %s" %(i+1, self.track_title[i])
+		print "\n"
+
+
+	def _fillout_disc_info(self, read_info, num_tracks):
+		s = read_info['DTITLE']
+		self.artist = s.split(' / ')[0]
+		self.album = s.split(' / ')[1]
+
+		self.artist = self._artist_name_fixup(self.artist)
+
+		self.artist_dir = self.artist.replace(' ', '_')
+		self.album_dir = self.album.replace(' ', '_')
+
+		self.year = read_info['DYEAR']
+		self.genre = read_info['DGENRE']
+
+		print "Artist\t- %s" %self.artist
+		print "Album\t- %s" %self.album
+		print "Year\t- %s" %self.year
+		print "Genre\t- %s" %self.genre
+		for i in range(num_tracks):
+			self.track_title.append(read_info['TTITLE' + `i`])
+			track_name = "%s - %.02d %s" %(self.artist, i+1, self.track_title[i])
+			track_name = self._track_name_fixup(track_name)
+			self.track_name.append(track_name)
+			print "\t%.02d - %s" %(i+1, self.track_title[i])
+		print "\n"
 
 
 	#This function adds a dep for CDDB-py
@@ -74,29 +138,10 @@ class album:
 			print "Error encountered reading CDDB, error = %d" %read_status
 			return True
 
-		s = read_info['DTITLE']
-		self.artist = s.split(' / ')[0]
-		self.album = s.split(' / ')[1]
-
-		self._artist_name_fixup(self.artist)
-
-		self.artist_dir = self.artist.replace(' ', '_')
-		self.album_dir = self.album.replace(' ', '_')
-
-		self.year = read_info['DYEAR']
-		self.genre = read_info['DGENRE']
-
-		print "Artist\t- %s" %self.artist
-		print "Album\t- %s" %self.album
-		print "Year\t- %s" %self.year
-		print "Genre\t- %s" %self.genre
-		for i in range(disc_id[1]):
-			self.track_title.append(read_info['TTITLE' + `i`])
-			track_name = "%s - %.02d %s" %(self.artist, i+1, self.track_title[i])
-			track_name = track_name.replace(' ', '_')
-			self.track_name.append(track_name)
-			print "\t%.02d - %s" %(i+1, self.track_title[i])
-		print "\n"
+		if read_info['DTITLE'].split(' / ')[0] == "Various":
+			self._fillout_va_disc_info(read_info, disc_id[1])
+		else:
+			self._fillout_disc_info(read_info, disc_id[1])
 
 		return False
 
@@ -105,22 +150,39 @@ class album:
 	def _lame_thread(self, num):
 		print "Encoding Track %d - \"%s\" as mp3" %(num+1, self.track_title[num])
 
+		if self.artist == "Various":
+			artist = self.track_name[num].split('_-_')[0] 
+			artist_dir = artist
+			artist.replace('_', ' ')
+			track_title = self.track_title[num].split(' / ')[1]
+		else:
+			artist = self.artist
+			artist_dir = self.artist_dir
+			track_title = self.track_title[num]
+
 		lame_opts = "-S --preset extreme -q 0 -V 0"
 
+		name = "%s/%s/%s" %(artist_dir, self.album_dir, self.track_name[num])
+
 		error = os.system('lame %s "%s.wav" "%s.mp3" --tt "%s" --ta "%s" --tl "%s" --ty "%s" --tn "%s" --tg "%s"'
-				  %(lame_opts, self.track_name[num], self.track_name[num], self.track_title[num], self.artist, self.album, self.year, num+1, self.genre))
+				  %(lame_opts, name, name, track_title, artist, self.album, self.year, num+1, self.genre))
 		if error:
 			print "Error %d encounterd while encoding" %error
 			return
 
 		if self.cleanup:
-			os.system('rm "%s.wav"' %self.track_name[num])
+			os.system('rm "%s.wav"' %name)
 		print "Done Encoding Track %d - \"%s\"" %(num+1, self.track_title[num])
 
 
 	#This function adds a dep for cdparanoia
 	def _rip(self, num):
-		error = os.system('cdparanoia -wd %s %d "%s.wav"' %(self.device, num+1, self.track_name[num]))
+		print "Ripping Track %d to WAV" %(num+1)
+		if self.artist == "Various":
+			artist_dir = self.track_name[num].split('_-_')[0] 
+		else:
+			artist_dir = self.artist_dir
+		error = os.system('cdparanoia -wd %s %d "%s/%s/%s.wav"' %(self.device, num+1, artist_dir, self.album_dir, self.track_name[num]))
 		if error:
 			return -1
 
@@ -148,25 +210,26 @@ class album:
 		if error:
 			return -1
 
-		error = os.access(self.artist_dir, os.F_OK)
-		if error == False:
-			error = os.mkdir(self.artist_dir)
-			if error:
-				return -1
+		if self.artist == "Various":
+			for i in range(len(self.track_name)):
+				artist_dir = self.track_name[i].split('_-_')[0] 
+				dirs = "%s/%s" %(artist_dir, self.album_dir)
 
-		error = os.chdir(self.artist_dir)
-		if error:
-			return -1
+				error = os.access(dirs, os.F_OK)
+				if error == True:
+					continue
 
-		error = os.access(self.album_dir, os.F_OK)
-		if error == False:
-			error = os.mkdir(self.album_dir)
-			if error:
-				return -1
+				error = os.makedirs(dirs)
+				if error:
+					return -1
+		else:
+			dirs = "%s/%s" %(self.artist_dir, self.album_dir)
 
-		error = os.chdir(self.album_dir)
-		if error:
-			return -1
+			error = os.access(dirs, os.F_OK)
+			if error == False:
+				error = os.makedirs(dirs)
+				if error:
+					return -1
 
 		return 0
 
@@ -181,7 +244,11 @@ class album:
 		m3u = open('%s_-_%s.m3u' %(self.artist_dir, self.album_dir), "w")
 
 		for i in range(len(self.track_name)):
-			s = "%s/%s/%s\n" %(self.artist_dir, self.album_dir, self.track_name[i])
+			if self.artist == "Various":
+				artist = self.track_name[i].split('_-_')[0]
+				s = "%s/%s/%s\n" %(artist, self.album_dir, self.track_name[i])
+			else:
+				s = "%s/%s/%s\n" %(self.artist_dir, self.album_dir, self.track_name[i])
 			m3u.writelines(s)
 
 		m3u.close()
