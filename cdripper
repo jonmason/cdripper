@@ -110,6 +110,9 @@ class album:
 
 		if self.artist == self.album:
 			print "The CDDB entry is hosed, attempting to work-around"
+			if len(self.artist.split(' - ')) < 2:
+				print "Can't fix entry"
+				return True
 			self.artist = self.artist.split(' - ')[0]
 			self.album = self.album.split(' - ')[1]
 
