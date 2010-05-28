@@ -21,6 +21,7 @@ import getopt, os, sys, threading, time, CDDB, DiscID
 # Python bindings for cdparanoia
 # Fetch CD Cover art
 # change errors to exceptions
+# Printout entries for each Multiple Disc found
 
 class album:
 	def __init__(self):
@@ -60,7 +61,7 @@ class album:
 		error = os.system('lame %s "%s.wav" "%s.mp3" --tt "%s" --ta "%s" --tl "%s" --ty "%s" --tn "%s" --tg "%s"'
 				  %(lame_opts, name, name, track_title, artist, self.album, self.year, num+1, self.genre))
 		if error:
-			print "Error %d encounterd while encoding" %error
+			print "Error %d encountered while encoding" %error
 			return
 
 		if self.cleanup:
@@ -71,10 +72,16 @@ class album:
 	#This function adds a dep for cdparanoia
 	def _rip(self, num):
 		print "Ripping Track %d to WAV" %(num+1)
+
+		#cdparanoia can't rip data tracks and will return an error.  Skip it.
+		if self.track_name[num] == "Data":
+			return False
+
 		if self.artist.startswith("Various"):
 			artist_dir = self.track_name[num].split('_-_')[0] 
 		else:
 			artist_dir = self.artist_dir
+
 		error = os.system('cdparanoia -wd %s %d "%s/%s/%s.wav"' %(self.device, num+1, artist_dir, self.album_dir, self.track_name[num]))
 		if error:
 			return True
@@ -152,11 +159,11 @@ class album:
 	def _artist_name_fixup(self, artist):
 		#for output uniformity, we should make sure that all titles that end with ", The" have "The " added to the beginning
 		if artist.endswith(', The'):
-			artist = artist.strip(', The')
+			artist = artist.rstrip(', The')
 			artist = "%s%s" %('The ', artist)
 
 		if artist.endswith(', the'):
-			artist = artist.strip(', the')
+			artist = artist.rstrip(', the')
 			artist = "%s%s" %('The ', artist)
 
 		if artist.startswith('the '):
@@ -164,14 +171,12 @@ class album:
 
 		#Look for a similarly named artist already existing and change to that if so
 		lower = artist.lower()
-		lower = lower.replace(' ', '')
-		lower = lower.replace('.', '')
+		lower = lower.translate(None, '. ')
 		lower_w_the = "%s%s" %('the', lower)
-		lower_wo_the = lower.strip('the')
+		lower_wo_the = lower.lstrip('the')
 		for files in os.listdir(self.dest_dir):
 			temp = files.lower()
-			temp = temp.replace('_', '')
-			temp = temp.replace('.', '')
+			temp = temp.translate(None, '_.')
 			if lower == temp or lower_w_the == temp or lower_wo_the == temp:
 				files = files.replace('_', ' ')
 				print "Similar Artist %s found" %files
@@ -182,7 +187,7 @@ class album:
 
 	def _track_name_fixup(self, trackname):
 		trackname = trackname.replace(' ', '_')
-		trackname = trackname.replace('/', '')
+		trackname = trackname.translate(None, '/')
 		return trackname
 
 
@@ -243,8 +248,10 @@ class album:
 
 		self.artist = self._artist_name_fixup(self.artist)
 
-		self.artist_dir = self.artist.replace(' ', '_')
-		self.album_dir = self.album.replace(' ', '_')
+		self.artist_dir = self.artist.translate(None, '/')
+		self.artist_dir = self.artist_dir.replace(' ', '_')
+		self.album_dir = self.album.translate(None, '/')
+		self.album_dir = self.album_dir.replace(' ', '_')
 
 		self.year = disc_info['DYEAR']
 		self.genre = disc_info['DGENRE']
@@ -313,14 +320,23 @@ class album:
 
 		return False
 
+def print_help():
+	print "The following paramaters are permissable:"
+	print "\t--device <DEV>\t\tChange the cdrom devicce from /dev/cdrom to the device specified"
+	print "\t--dest_dir <PATH>\tChange the destination directory of the files from ~/ to the path specified"
+	print "\t--nocleanup\t\tDo not remove WAV files after encoding"
+	print "\t--force_va\t\tForce the disc to be treated as a Various Artists album"
+	print "\t--title_only\t\tPrintout Album infomation and exit"
+	print "\t--help\t\t\tPrintout available parameters"
 
 def main():
 	disc = album()
 
 	try:
-		opts, args = getopt.getopt(sys.argv[1:], "", ["device=", "dest_dir=", "nocleanup", "force_va", "title_only"])
+		opts, args = getopt.getopt(sys.argv[1:], "", ["device=", "dest_dir=", "nocleanup", "force_va", "title_only", "help"])
 	except getopt.error, err:
 		print str(err)
+		print_help()
 		sys.exit(2)
 
 	for o, a in opts:
@@ -334,6 +350,9 @@ def main():
 			disc.force_va = True
 		if o == "--title_only":
 			disc.title_only = True
+		if o == "--help":
+			print_help()
+			return
 
 	rc = disc.fetch_cddb()
 	if rc:
