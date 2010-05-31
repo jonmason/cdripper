@@ -45,7 +45,7 @@ class album:
 		print "Encoding Track %d - \"%s\" as mp3" %(num+1, self.track_title[num])
 
 		if self.artist.startswith("Various"):
-			artist = self.track_name[num].split('_-_')[0] 
+			artist = self.track_name[num].split('_-_')[0]
 			artist_dir = artist
 			artist.replace('_', ' ')
 			track_title = self.track_title[num].split(' / ')[1]
@@ -73,12 +73,8 @@ class album:
 	def _rip(self, num):
 		print "Ripping Track %d to WAV" %(num+1)
 
-		#cdparanoia can't rip data tracks and will return an error.  Skip it.
-		if self.track_name[num] == "Data":
-			return False
-
 		if self.artist.startswith("Various"):
-			artist_dir = self.track_name[num].split('_-_')[0] 
+			artist_dir = self.track_name[num].split('_-_')[0]
 		else:
 			artist_dir = self.artist_dir
 
@@ -93,6 +89,10 @@ class album:
 		print "Ripping CD & Encoding\n"
 
 		for i in range(len(self.track_name)):
+			#cdparanoia can't rip data tracks and will return an error.  Skip it.
+			if self.track_name[i].lower == "data":
+				continue
+
 			error = self._rip(i)
 			if error:
 				return True
@@ -112,7 +112,7 @@ class album:
 
 		if self.artist.startswith("Various"):
 			for i in range(len(self.track_name)):
-				artist_dir = self.track_name[i].split('_-_')[0] 
+				artist_dir = self.track_name[i].split('_-_')[0]
 				dirs = "%s/%s" %(artist_dir, self.album_dir)
 
 				error = os.access(dirs, os.F_OK)
@@ -169,9 +169,11 @@ class album:
 		if artist.startswith('the '):
 			artist = artist.replace('the ', 'The ', 1)
 
+		artist = artist.translate(None, '`"')
+
 		#Look for a similarly named artist already existing and change to that if so
 		lower = artist.lower()
-		lower = lower.translate(None, '. ')
+		lower = lower.translate(None, '`. ')
 		lower_w_the = "%s%s" %('the', lower)
 		lower_wo_the = lower.lstrip('the')
 		for files in os.listdir(self.dest_dir):
@@ -187,15 +189,15 @@ class album:
 
 	def _track_name_fixup(self, trackname):
 		trackname = trackname.replace(' ', '_')
-		trackname = trackname.translate(None, '/')
+		trackname = trackname.translate(None, '`/"')
 		return trackname
 
 
 	def _fillout_va_disc_info(self, disc_info, num_tracks):
-		self.artist = "Various" 
+		self.artist = "Various"
 		self.album = disc_info['DTITLE'].split(' / ')[1]
 
-		self.artist_dir = self.artist 
+		self.artist_dir = self.artist
 		self.album_dir = self.album.replace(' ', '_')
 
 		self.year = disc_info['DYEAR']
@@ -221,9 +223,15 @@ class album:
 			if dash:
 				self.track_title[i] = self.track_title[i].replace(' - ', ' / ')
 
-			artist = self.track_title[i].split(' / ')[0]
-			artist = self._artist_name_fixup(artist)
-			song  = self.track_title[i].split(' / ')[1]
+			if len(self.track_title[i].split(' / ')) > 1:
+				artist = self.track_title[i].split(' / ')[0]
+				artist = self._artist_name_fixup(artist)
+				song = self.track_title[i].split(' / ')[1]
+				song = song.translate(None, '`')
+			else:
+				artist = self.track_title[i]
+				song = self.track_title[i]
+
 			track_name = "%s - %.02d %s" %(artist, i+1, song)
 			track_name = track_name.replace(' ', '_')
 			self.track_name.append(track_name)
@@ -262,6 +270,7 @@ class album:
 		print "Genre\t- %s" %self.genre
 		for i in range(num_tracks):
 			self.track_title.append(disc_info['TTITLE' + `i`])
+			self.track_title[i] = self.track_title[i].translate(None, '`"')
 			track_name = "%s - %.02d %s" %(self.artist, i+1, self.track_title[i])
 			track_name = self._track_name_fixup(track_name)
 			self.track_name.append(track_name)
@@ -290,20 +299,23 @@ class album:
 		(error, query_info) = CDDB.query(disc_id)
 		if error != 200 and error != 210 and error != 211:
 			print "Error encountered querying CDDB, error = %d" %error
-			return True 
+			return True
 
 		if error == 210 or error == 211:
-			print "Multiple Disc's found"
-			for i in range(len(query_info)):
-				temp_info = query_info[i]
-				print "%d - Title = %s, Category %s, disc_id %s" %(i, temp_info['title'], temp_info['category'], temp_info['disc_id'])
-			print "Please select the correct disc number"
-			choice = input()
-			while  choice < 0 or choice > i:
-				print "Selection %d invalid, please choose again" %choice
+			if len(query_info) > 1:
+				print "Multiple Disc's found"
+				for i in range(len(query_info)):
+					temp_info = query_info[i]
+					print "%d - Title = %s, Category %s, disc_id %s" %(i, temp_info['title'], temp_info['category'], temp_info['disc_id'])
+				print "Please select the correct disc number"
 				choice = input()
+				while  choice < 0 or choice > i:
+					print "Selection %d invalid, please choose again" %choice
+					choice = input()
 
-			print "Selection %d Chosen" %choice
+				print "Selection %d Chosen" %choice
+			else:
+				choice = 0
 			query_info = query_info[choice]
 
 		(error, disc_info) = CDDB.read(query_info['category'], query_info['disc_id'])
