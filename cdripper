@@ -21,7 +21,7 @@ import getopt, os, sys, threading, time, CDDB, DiscID
 # Python bindings for cdparanoia
 # Fetch CD Cover art
 # change errors to exceptions
-# Printout entries for each Multiple Disc found
+# Add ability to push changes to CDDB
 
 class album:
 	def __init__(self):
@@ -90,7 +90,7 @@ class album:
 
 		for i in range(len(self.track_name)):
 			#cdparanoia can't rip data tracks and will return an error.  Skip it.
-			if self.track_name[i].lower == "data":
+			if self.track_title[i].lower() == "data":
 				continue
 
 			error = self._rip(i)
@@ -189,13 +189,17 @@ class album:
 
 	def _track_name_fixup(self, trackname):
 		trackname = trackname.replace(' ', '_')
-		trackname = trackname.translate(None, '`/"')
+		trackname = trackname.translate(None, '`\/"')
 		return trackname
 
 
 	def _fillout_va_disc_info(self, disc_info, num_tracks):
 		self.artist = "Various"
-		self.album = disc_info['DTITLE'].split(' / ')[1]
+		if len(disc_info['DTITLE'].split(' / ')) > 1:
+			self.album = disc_info['DTITLE'].split(' / ')[1]
+		else:
+			print "Album name is hosed...working around it"
+			self.album = disc_info['DTITLE']
 
 		self.artist_dir = self.artist
 		self.album_dir = self.album.replace(' ', '_')
@@ -237,17 +241,16 @@ class album:
 			self.track_name.append(track_name)
 			print "\t%.02d - %s" %(i+1, self.track_title[i])
 		print "\n"
-
-		if self.title_only:
-			return True
-		else:
-			return False
+		return False
 
 
 	def _fillout_disc_info(self, disc_info, num_tracks):
-		s = disc_info['DTITLE']
-		self.artist = s.split(' / ')[0]
-		self.album = s.split(' / ')[1]
+		if len(disc_info['DTITLE'].split(' / ')) < 2:
+			print "Album name hosed"
+			return True
+
+		self.artist = disc_info['DTITLE'].split(' / ')[0]
+		self.album = disc_info['DTITLE'].split(' / ')[1]
 
 		if self.artist == self.album and len(self.artist.split(' - ')) > 1:
 			print "The CDDB entry is hosed, attempting to work-around"
@@ -268,6 +271,7 @@ class album:
 		print "Album\t- %s" %self.album
 		print "Year\t- %s" %self.year
 		print "Genre\t- %s" %self.genre
+
 		for i in range(num_tracks):
 			self.track_title.append(disc_info['TTITLE' + `i`])
 			self.track_title[i] = self.track_title[i].translate(None, '`"')
@@ -276,11 +280,57 @@ class album:
 			self.track_name.append(track_name)
 			print "\t%.02d - %s" %(i+1, self.track_title[i])
 		print "\n"
+		return False
 
-		if self.title_only:
-			return True
+	def _fillout_CDDB_info(self, num_tracks):
+		print "Please enter Artist name (\"Various\" for Multiple Artists)"
+		self.artist = raw_input('--> ')
+		print "Please enter Album name"
+		self.album = raw_input('--> ')
+		print "Please enter the Year the album was produced (Enter for Unknown)"
+		self.year = raw_input('--> ')
+		print "Please enter the Genre of the album (Enter for Unknown)"
+		self.genre = raw_input('--> ')
+
+		print "Artist\t- %s" %self.artist
+		print "Album\t- %s" %self.album
+		print "Year\t- %s" %self.year
+		print "Genre\t- %s" %self.genre
+
+		print "Is this correct?"
+		choice = raw_input('--> ')
+		if choice == "y" or choice == "Yes" or choice == "yes":
+			print "Excellent, let's move on"
 		else:
-			return False
+			print "Try again"
+			return True
+
+		self.artist_dir = self.artist.translate(None, '/')
+		self.artist_dir = self.artist_dir.replace(' ', '_')
+		self.album_dir = self.album.translate(None, '/')
+		self.album_dir = self.album_dir.replace(' ', '_')
+
+		print "Enter Track titles:"
+		for i in range(num_tracks):
+			track = raw_input('Track %d --> ' %(i+1))
+			self.track_title.append(track)
+			self.track_title[i] = self.track_title[i].translate(None, '`"')
+			track_name = "%s - %.02d %s" %(self.artist, i+1, self.track_title[i])
+			track_name = self._track_name_fixup(track_name)
+			self.track_name.append(track_name)
+
+		for i in range(num_tracks):
+			print "Track %d is %s" %(i, self.track_name[i])
+
+		print "Is this correct?"
+		choice = raw_input('--> ')
+		if choice == "y" or choice == "Yes" or choice == "yes":
+			print "Excellent, let's move on"
+		else:
+			print "Try again"
+			return True
+
+		return False
 
 
 	#This function adds a dep for CDDB-py
@@ -297,9 +347,20 @@ class album:
 				print "No disc detected, retrying..."
 
 		(error, query_info) = CDDB.query(disc_id)
-		if error != 200 and error != 210 and error != 211:
+		if error != 200 and error != 210 and error != 211 and error != 202:
 			print "Error encountered querying CDDB, error = %d" %error
 			return True
+
+		if error == 202:
+			print "No CDDB entry found, would you like to enter one?"
+			choice = raw_input('--> ')
+			if choice == "y" or choice == "Yes" or choice == "yes":
+				if self._fillout_CDDB_info(disc_id[1]) or self.title_only:
+					return True
+				else:
+					return False
+			else:
+				return True
 
 		if error == 210 or error == 211:
 			if len(query_info) > 1:
@@ -307,9 +368,17 @@ class album:
 				for i in range(len(query_info)):
 					temp_info = query_info[i]
 					print "%d - Title = %s, Category %s, disc_id %s" %(i, temp_info['title'], temp_info['category'], temp_info['disc_id'])
+					(error, disc_info) = CDDB.read(temp_info['category'], temp_info['disc_id'])
+					if error:
+						print "Error reading from CDDB, Exiting"
+						return True
+					self._fillout_disc_info(disc_info, disc_id[1])
+					# reset arrays otherwise, it will keep adding to the same lists and will mess up the call to _fillout_disc_info below
+					self.track_title = []
+					self.track_name = []
 				print "Please select the correct disc number"
 				choice = input()
-				while  choice < 0 or choice > i:
+				while choice < 0 or choice > i:
 					print "Selection %d invalid, please choose again" %choice
 					choice = input()
 
@@ -324,13 +393,14 @@ class album:
 			return True
 
 		if self.force_va or disc_info['DTITLE'].split(' / ')[0].startswith("Various"):
-			if self._fillout_va_disc_info(disc_info, disc_id[1]):
-				return True
+			error = self._fillout_va_disc_info(disc_info, disc_id[1])
 		else:
-			if self._fillout_disc_info(disc_info, disc_id[1]):
-				return True
+			error = self._fillout_disc_info(disc_info, disc_id[1])
 
-		return False
+		if error or self.title_only:
+			return True
+		else:
+			return False
 
 def print_help():
 	print "The following paramaters are permissable:"
