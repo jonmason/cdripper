@@ -245,12 +245,17 @@ class album:
 
 
 	def _fillout_disc_info(self, disc_info, num_tracks):
-		if len(disc_info['DTITLE'].split(' / ')) < 2:
-			print "Album name hosed"
+		if len(disc_info['DTITLE'].split('/')) < 2:
+			print "Album name of \"%s\" is unacceptable" %disc_info['DTITLE']
 			return True
 
-		self.artist = disc_info['DTITLE'].split(' / ')[0]
-		self.album = disc_info['DTITLE'].split(' / ')[1]
+		if self.artist == None:
+			self.artist = disc_info['DTITLE'].split('/')[0]
+			self.artist = self.artist.strip()
+
+		if self.album == None:
+			self.album = disc_info['DTITLE'].split('/')[1]
+			self.album = self.album.strip()
 
 		if self.artist == self.album and len(self.artist.split(' - ')) > 1:
 			print "The CDDB entry is hosed, attempting to work-around"
@@ -314,7 +319,7 @@ class album:
 		for i in range(num_tracks):
 			track = raw_input('Track %d --> ' %(i+1))
 			self.track_title.append(track)
-			self.track_title[i] = self.track_title[i].translate(None, '`"')
+			self.track_title[i] = self.track_title[i].translate(None, '`",\'')
 			track_name = "%s - %.02d %s" %(self.artist, i+1, self.track_title[i])
 			track_name = self._track_name_fixup(track_name)
 			self.track_name.append(track_name)
@@ -335,7 +340,7 @@ class album:
 
 	#This function adds a dep for CDDB-py
 	def fetch_cddb(self):
-		print "Fetching CDDB Informtaion\n"
+		print "Fetching CDDB Information\n"
 
 		while True:
 			try:
@@ -352,10 +357,14 @@ class album:
 			return True
 
 		if error == 202:
+			if self.title_only:
+				print "No CDDB entry found"
+				return True
+
 			print "No CDDB entry found, would you like to enter one?"
 			choice = raw_input('--> ')
 			if choice == "y" or choice == "Yes" or choice == "yes":
-				if self._fillout_CDDB_info(disc_id[1]) or self.title_only:
+				if self._fillout_CDDB_info(disc_id[1]):
 					return True
 				else:
 					return False
@@ -369,7 +378,7 @@ class album:
 					temp_info = query_info[i]
 					print "%d - Title = %s, Category %s, disc_id %s" %(i, temp_info['title'], temp_info['category'], temp_info['disc_id'])
 					(error, disc_info) = CDDB.read(temp_info['category'], temp_info['disc_id'])
-					if error:
+					if error != 210:
 						print "Error reading from CDDB, Exiting"
 						return True
 					self._fillout_disc_info(disc_info, disc_id[1])
@@ -404,18 +413,21 @@ class album:
 
 def print_help():
 	print "The following paramaters are permissable:"
-	print "\t--device <DEV>\t\tChange the cdrom devicce from /dev/cdrom to the device specified"
+	print "\t--device <DEV>\t\tChange the cdrom device from /dev/cdrom to the device specified"
 	print "\t--dest_dir <PATH>\tChange the destination directory of the files from ~/ to the path specified"
 	print "\t--nocleanup\t\tDo not remove WAV files after encoding"
 	print "\t--force_va\t\tForce the disc to be treated as a Various Artists album"
 	print "\t--title_only\t\tPrintout Album infomation and exit"
+	print "\t--replace_artist <NAME>\tOverwrite the Artist from CDDB"
+	print "\t--replace_album <NAME>\tOverwrite the Album from CDDB"
 	print "\t--help\t\t\tPrintout available parameters"
 
 def main():
+	#verify that lame and cdparanoia are installed/in path
 	disc = album()
 
 	try:
-		opts, args = getopt.getopt(sys.argv[1:], "", ["device=", "dest_dir=", "nocleanup", "force_va", "title_only", "help"])
+		opts, args = getopt.getopt(sys.argv[1:], "", ["device=", "dest_dir=", "nocleanup", "force_va", "title_only", "help", "replace_artist=", "replace_album="])
 	except getopt.error, err:
 		print str(err)
 		print_help()
@@ -435,9 +447,24 @@ def main():
 		if o == "--help":
 			print_help()
 			return
+		if o == "--replace_artist":
+			disc.artist = a
+		if o == "--replace_album":
+			disc.album = a
 
 	rc = disc.fetch_cddb()
 	if rc:
+		return
+
+	error = os.system('which cdparanoia > /dev/null')
+	if error:
+		print "cdparanoia not installed, exiting..."
+		return
+
+#only necessary if mp3
+	error = os.system('which lame > /dev/null')
+	if error:
+		print "lame not installed, exiting..."
 		return
 
 	rc = disc.create_playlist()
