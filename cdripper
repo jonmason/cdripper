@@ -385,10 +385,16 @@ class album:
 
 
 	def _create_cddb_email(self):
+		print "Would you like to send this via e-mail to update the CDDB?"
+		choice = raw_input('--> ')
+		if choice == "y" or choice == "Yes" or choice == "yes":
+			print "Sending email..."
+		else:
+			return False
+
 		sendmail_location = "/usr/sbin/sendmail" # sendmail location
 		email = os.popen("%s -t" % sendmail_location, "w")
-		#email.write("To: %s, %s\n" %("test-submit@freedb.org", "jdmason@gmail.com"))
-		email.write("To: %s\n" % "freedb-submit@freedb.org")
+		email.write("To: %s\n" % "submit@gnudb.org")
 		email.write("Subject: cddb %s %08lx\n" %(self.genre, self.cddb_checksum))
 		email.write("\n") # blank line separating headers from body
 
@@ -497,7 +503,7 @@ class album:
 				time.sleep(1)
 				print "No disc detected, retrying..."
 
-		(error, query_info) = CDDB.query(disc_id)
+                (error, query_info) = CDDB.query(disc_id, 'https://gnudb.gnudb.org/~cddb/cddb.cgi')
 		if error != 200 and error != 210 and error != 211 and error != 202:
 			print "Error encountered querying CDDB, error = %d" %error
 			return True
